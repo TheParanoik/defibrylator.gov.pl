@@ -136,3 +136,83 @@ msgstr "Dziennik logowania"
 
 msgid "Security"
 msgstr "Bezpieczeństwo"
+
+# 2FA (TOTP) - mcod.users.mfa
+msgid "Two-factor authentication required"
+msgstr "Wymagane uwierzytelnianie dwuskładnikowe"
+
+msgid "The user must use an authenticator app when logging in with e-mail and password. Without a configured app, the user will be asked to set it up at the next login."
+msgstr "Użytkownik musi używać aplikacji uwierzytelniającej przy logowaniu e-mailem i hasłem. Bez skonfigurowanej aplikacji zostanie poproszony o jej konfigurację przy najbliższym logowaniu."
+
+msgid "Authenticator app"
+msgstr "Aplikacja uwierzytelniająca"
+
+msgid "Authenticator apps"
+msgstr "Aplikacje uwierzytelniające"
+
+msgid "Recovery code"
+msgstr "Kod zapasowy"
+
+msgid "Recovery codes"
+msgstr "Kody zapasowe"
+
+msgid "Enter the code from your authenticator app or a recovery code."
+msgstr "Podaj kod z aplikacji uwierzytelniającej albo kod zapasowy."
+
+msgid "The administrator requires two-factor authentication for this account. Set up an authenticator app."
+msgstr "Administrator wymaga uwierzytelniania dwuskładnikowego dla tego konta. Skonfiguruj aplikację uwierzytelniającą."
+
+msgid "Invalid or already used verification code."
+msgstr "Nieprawidłowy albo już użyty kod weryfikacyjny."
+
+msgid "This two-factor authentication operation is not allowed for this account."
+msgstr "Ta operacja uwierzytelniania dwuskładnikowego jest niedozwolona dla tego konta."
+
+msgid "Two-factor authentication setup has not been started."
+msgstr "Konfiguracja uwierzytelniania dwuskładnikowego nie została rozpoczęta."
+
+msgid "Two-factor authentication error."
+msgstr "Błąd uwierzytelniania dwuskładnikowego."
+
+msgid "The administrator requires two-factor authentication for this account. Log in on the portal first and set up an authenticator app."
+msgstr "Administrator wymaga uwierzytelniania dwuskładnikowego dla tego konta. Zaloguj się najpierw w portalu i skonfiguruj aplikację uwierzytelniającą."
+
+msgid "Authenticator app code"
+msgstr "Kod z aplikacji uwierzytelniającej"
+
+msgid "Only for accounts with two-factor authentication."
+msgstr "Tylko dla kont z uwierzytelnianiem dwuskładnikowym."
+
+#, python-format
+msgid "Authenticator app configured on %(date)s, recovery codes left: %(left)s"
+msgstr "Aplikacja uwierzytelniająca skonfigurowana %(date)s, pozostałe kody zapasowe: %(left)s"
+
+msgid "Not configured - the user will be asked to set it up at the next login"
+msgstr "Nieskonfigurowane – użytkownik zostanie poproszony o konfigurację przy najbliższym logowaniu"
+
+msgid "Not configured"
+msgstr "Nieskonfigurowane"
+
+msgid "Two-factor authentication"
+msgstr "Uwierzytelnianie dwuskładnikowe"
+
+#, python-format
+msgid "Two-factor authentication is now required for %(count)d user(s)."
+msgstr "Uwierzytelnianie dwuskładnikowe jest teraz wymagane dla użytkowników: %(count)d."
+
+msgid "Require two-factor authentication"
+msgstr "Wymuś uwierzytelnianie dwuskładnikowe"
+
+#, python-format
+msgid "Two-factor authentication requirement removed for %(count)d user(s)."
+msgstr "Usunięto wymóg uwierzytelniania dwuskładnikowego dla użytkowników: %(count)d."
+
+msgid "Remove two-factor authentication requirement"
+msgstr "Usuń wymóg uwierzytelniania dwuskładnikowego"
+
+#, python-format
+msgid "Two-factor authentication reset for %(count)d user(s)."
+msgstr "Zresetowano uwierzytelnianie dwuskładnikowe dla użytkowników: %(count)d."
+
+msgid "Reset two-factor authentication (lost device)"
+msgstr "Zresetuj uwierzytelnianie dwuskładnikowe (utrata telefonu)"

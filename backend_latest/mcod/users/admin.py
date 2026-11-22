@@ -18,6 +18,7 @@ from django_admin_multiple_choice_list_filter.list_filters import MultipleChoice
 from mcod.discourse.tasks import user_sync_task
 from mcod.lib.admin_mixins import HistoryMixin, MCODChangeList, ModelAdmin, TrashMixin, UserAdmin
 from mcod.organizations.models import Organization
+from mcod.users import mfa
 from mcod.users.forms import (
     FilteredSelectMultipleCustom,
     MeetingForm,
@@ -112,10 +113,12 @@ class UserAdmin(HistoryMixin, AdminConfirmMixin, UserAdmin):
         "_is_superuser",
         "_is_academy_admin",
         "_is_labs_admin",
+        "_mfa_status",
     ]
 
     ordering = ("email",)
-    readonly_fields = ("extra_agents_list",)
+    readonly_fields = ("extra_agents_list", "mfa_status_info")
+    actions = ["require_mfa", "remove_mfa_requirement", "reset_mfa"]
     search_fields = ["email", "fullname"]
 
     form = UserChangeForm
@@ -210,6 +213,7 @@ class UserAdmin(HistoryMixin, AdminConfirmMixin, UserAdmin):
             return (
                 "is_academy_admin",
                 "is_labs_admin",
+                "mfa_status_info",
             )
         return super().get_readonly_fields(request, obj=obj)
 
@@ -290,6 +294,71 @@ class UserAdmin(HistoryMixin, AdminConfirmMixin, UserAdmin):
 
     suit_form_tabs = (("general", _("General")),)
 
+    def _mfa_status(self, obj):
+        return mfa.is_enabled(obj)
+
+    _mfa_status.boolean = True
+    _mfa_status.short_description = _("2FA")
+
+    def mfa_status_info(self, obj):
+        if obj is None or obj.pk is None:
+            return "-"
+        state = mfa.status(obj)
+        if state["enabled"]:
+            return _("Authenticator app configured on %(date)s, recovery codes left: %(left)s") % {
+                "date": state["confirmed_at"].strftime("%Y-%m-%d %H:%M"),
+                "left": state["recovery_codes_left"],
+            }
+        if state["required"]:
+            return _("Not configured - the user will be asked to set it up at the next login")
+        return _("Not configured")
+
+    mfa_status_info.short_description = _("Two-factor authentication")
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if not request.user.is_superuser:
+            for name in ("require_mfa", "remove_mfa_requirement", "reset_mfa"):
+                actions.pop(name, None)
+        return actions
+
+    def _set_mfa_required(self, request, queryset, value):
+        if not request.user.is_superuser:
+            raise PermissionDenied
+        count = 0
+        for user in queryset:
+            if user.mfa_required != value:
+                user.mfa_required = value
+                user.save(update_fields=["mfa_required"])
+                self.log_change(request, user, "2FA required" if value else "2FA requirement removed")
+                count += 1
+        return count
+
+    def require_mfa(self, request, queryset):
+        count = self._set_mfa_required(request, queryset, True)
+        messages.success(request, _("Two-factor authentication is now required for %(count)d user(s).") % {"count": count})
+
+    require_mfa.short_description = _("Require two-factor authentication")
+
+    def remove_mfa_requirement(self, request, queryset):
+        count = self._set_mfa_required(request, queryset, False)
+        messages.success(request, _("Two-factor authentication requirement removed for %(count)d user(s).") % {"count": count})
+
+    remove_mfa_requirement.short_description = _("Remove two-factor authentication requirement")
+
+    def reset_mfa(self, request, queryset):
+        """Utrata telefonu: usuwa aplikację i kody zapasowe. Przy wymogu konto skonfiguruje 2FA przy logowaniu."""
+        if not request.user.is_superuser:
+            raise PermissionDenied
+        count = 0
+        for user in queryset:
+            if mfa.admin_reset(user):
+                self.log_change(request, user, "2FA reset by administrator")
+                count += 1
+        messages.success(request, _("Two-factor authentication reset for %(count)d user(s).") % {"count": count})
+
+    reset_mfa.short_description = _("Reset two-factor authentication (lost device)")
+
     def get_state_value(self, obj):
         return obj.state
 
@@ -324,6 +393,8 @@ class UserAdmin(HistoryMixin, AdminConfirmMixin, UserAdmin):
             *_agent_organizations_fields,
             "extra_agents_list",
             "state",
+            "mfa_required",
+            "mfa_status_info",
         ]
         if not request.user.is_superuser:
             permissions_fields = [

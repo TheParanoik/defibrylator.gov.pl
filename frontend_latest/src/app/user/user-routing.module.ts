@@ -17,6 +17,7 @@ import { RegisterComponent } from '@app/user/auth/register/register.component';
 import { ResetPasswordComponent } from '@app/user/auth/reset-password/reset-password.component';
 import { VerifyEmailComponent } from '@app/user/auth/verify-email/verify-email.component';
 import { ChangePasswordComponent } from '@app/user/change-password/change-password.component';
+import { TwoFactorComponent } from '@app/user/two-factor/two-factor.component';
 import { DashboardComponent } from '@app/user/dashboard/dashboard.component';
 import { ActiveDataProposalComponent } from '@app/user/data-proposal/active/active-data-proposal.component';
 import { DataProposalComponent } from '@app/user/data-proposal/data-proposal.component';
@@ -59,6 +60,7 @@ const routes: Routes = [
     children: [
       { path: '', redirectTo: '!desktop', pathMatch: 'full' },
       { path: '!change-password', component: ChangePasswordComponent, canActivate: [AuthGuard] },
+      { path: '!two-factor', component: TwoFactorComponent, canActivate: [AuthGuard] },
       {
         path: '!academy',
         component: AcademyComponent,

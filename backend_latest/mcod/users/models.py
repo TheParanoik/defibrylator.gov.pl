@@ -310,6 +310,14 @@ class User(
         null=True,
         max_length=50,
     )
+    mfa_required = models.BooleanField(
+        default=False,
+        verbose_name=_("Two-factor authentication required"),
+        help_text=_(
+            "The user must use an authenticator app when logging in with e-mail and password. "
+            "Without a configured app, the user will be asked to set it up at the next login."
+        ),
+    )
 
     class Meta:
         verbose_name = _("User")
@@ -1084,3 +1092,36 @@ def es_refresh(sender, instance, *args, **kwargs):
     resource_name = sender.__name__[13:].lower()
     resource = getattr(instance, resource_name)
     update_document_task.delay(resource._meta.app_label, resource._meta.object_name, resource.id)
+
+
+class UserTOTP(models.Model):
+    """Aplikacja uwierzytelniająca (TOTP, RFC 6238) użytkownika – 2FA w logowaniu e-mail + hasło (mcod.users.mfa).
+
+    Wiersz z ``confirmed_at = NULL`` to konfiguracja rozpoczęta, ale niepotwierdzona kodem.
+    """
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="totp")
+    secret = enc_fields.EncryptedCharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    last_used_step = models.BigIntegerField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("Authenticator app")
+        verbose_name_plural = _("Authenticator apps")
+        db_table = "user_totp"
+
+
+class RecoveryCode(models.Model):
+    """Jednorazowy kod zapasowy 2FA. Przechowywany wyłącznie jako SHA-256."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mfa_recovery_codes")
+    code_hash = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("Recovery code")
+        verbose_name_plural = _("Recovery codes")
+        db_table = "user_mfa_recovery_code"
+        indexes = [models.Index(fields=["user", "code_hash"], name="user_mfa_rc_user_hash_idx")]

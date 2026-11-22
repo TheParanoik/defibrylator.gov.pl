@@ -7,6 +7,7 @@ from django.contrib.admin import forms as admin_forms
 from django.contrib.admin.widgets import FilteredSelectMultiple
 from django.contrib.auth import forms as auth_forms
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.signals import user_login_failed
 from django.core.exceptions import ValidationError
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
@@ -14,6 +15,7 @@ from suit.widgets import SuitDateWidget, SuitTimeWidget
 
 from mcod.lib.forms.fields import InternalPhoneNumberField, PhoneNumberField
 from mcod.lib.widgets import CKEditorWidget
+from mcod.users import mfa
 from mcod.users.models import Meeting, User
 
 
@@ -293,7 +295,39 @@ class AdminLoginForm(admin_forms.AdminAuthenticationForm):
         **admin_forms.AdminAuthenticationForm.error_messages,
         "confirm_email": _("You should confirm your email before logging in."),
         "blocked": _("This user is blocked, please contact the administrators."),
+        "mfa_required": _("Enter the code from your authenticator app or a recovery code."),
+        "mfa_invalid_code": _("Invalid or already used verification code."),
+        "mfa_setup_required": _(
+            "The administrator requires two-factor authentication for this account. "
+            "Log in on the portal first and set up an authenticator app."
+        ),
     }
+
+    otp_code = forms.CharField(
+        label=_("Authenticator app code"),
+        required=False,
+        max_length=32,
+        widget=forms.TextInput(attrs={"autocomplete": "one-time-code", "inputmode": "numeric"}),
+        help_text=_("Only for accounts with two-factor authentication."),
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        user = self.get_user()
+        if user is not None:
+            # drugi składnik po poprawnym haśle (mcod.users.mfa); błędny kod liczy django-axes jak złe hasło
+            try:
+                mfa.check_login(user, self.cleaned_data.get("otp_code"))
+            except mfa.MfaError as exc:
+                if isinstance(exc, mfa.MfaInvalidCode):
+                    user_login_failed.send(
+                        sender=__name__,
+                        credentials={"username": self.cleaned_data.get("username")},
+                        request=self.request,
+                    )
+                self.user_cache = None
+                raise ValidationError(self.error_messages.get(exc.code, exc.code), code=exc.code)
+        return cleaned_data
 
     def confirm_login_allowed(self, user):
         if user.state == "pending":

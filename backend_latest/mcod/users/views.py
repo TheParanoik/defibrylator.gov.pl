@@ -56,12 +56,17 @@ from mcod.logingovpl.views import SSOView as BaseSSOView
 from mcod.schedules.models import Schedule
 from mcod.suggestions.models import AcceptedDatasetSubmission
 from mcod.tools.api.dashboard import DashboardMetaSerializer, DashboardSerializer
+from mcod.users import mfa
 from mcod.users.constants import LOGINGOVPL_PROCESS, LOGINGOVPL_PROCESS_RESULT, PORTAL_TYPE
 from mcod.users.deserializers import (
     ChangePasswordApiRequest,
     ConfirmResetPasswordApiRequest,
     LoginApiRequest,
     MeetingApiSearchRequest,
+    MfaCodeApiRequest,
+    MfaDisableApiRequest,
+    MfaLoginConfirmApiRequest,
+    MfaLoginSetupApiRequest,
     RegistrationApiRequest,
     ResendActivationEmailApiRequest,
     ResetPasswordApiRequest,
@@ -71,6 +76,7 @@ from mcod.users.deserializers import (
 from mcod.users.documents import MeetingDoc
 from mcod.users.exceptions import SAMLArtException
 from mcod.users.forms import AdminLoginForm
+from mcod.users.mfa_api import mfa_api_errors
 from mcod.users.models import LoggingMethod, Meeting, MeetingFile, Token
 from mcod.users.serializers import (
     ACSResponse,
@@ -81,6 +87,7 @@ from mcod.users.serializers import (
     LoginApiResponse,
     LogoutApiResponse,
     MeetingApiResponse,
+    MfaStatusApiResponse,
     RegistrationApiResponse,
     ResendActivationEmailApiResponse,
     ResetPasswordApiResponse,
@@ -94,11 +101,80 @@ logger = logging.getLogger("mcod")
 User = get_user_model()
 
 
+def authenticate_with_password(request, email, password):
+    """Sprawdza konto i hasło (bez tworzenia sesji). Wspólne dla logowania i konfiguracji 2FA przed logowaniem."""
+    email = email.lower()
+    try:
+        user = User.objects.get(
+            email=email,
+            is_removed=False,
+            is_permanently_removed=False,
+        )
+    except User.DoesNotExist:
+        raise falcon.HTTPUnauthorized(
+            title="401 Unauthorized",
+            description=_("Invalid email or password"),
+            code="account_not_exist",
+        )
+
+    if user.state != "active":
+        if user.state not in settings.USER_STATE_LIST or user.state == "deleted":
+            raise falcon.HTTPUnauthorized(
+                title="401 Unauthorized",
+                description=_("Account is not available"),
+                code="account_unavailable",
+            )
+
+        if user.state in ("draft", "blocked"):
+            raise falcon.HTTPUnauthorized(
+                title="401 Unauthorized",
+                description=_("Account is blocked"),
+                code="account_unavailable",
+            )
+
+        if user.state == "pending":
+            raise falcon.HTTPForbidden(
+                title="403 Forbidden",
+                description=get_user_pending_description(),
+                code="account_inactive",
+            )
+
+    user = authenticate(request=request, email=email, password=password)
+
+    if user is None:
+        raise falcon.HTTPUnauthorized(
+            title="401 Unauthorized",
+            description=_("Invalid email or password"),
+            code="authorization_error",
+        )
+    return user
+
+
+def log_in_api_user(request, user):
+    if not hasattr(request, "session"):
+        request.session = session_store()
+
+        request.META = {}
+    login(request, user)
+    request.session.save()
+    user.token = get_auth_token(user, request.session.session_key)
+    user.update_last_logging_method(LoggingMethod.FORM)
+    return user
+
+
+def _login_rate_limit_key(req):
+    return req.get_media()["data"]["attributes"]["email"]
+
+
+def _authorization_rate_limit_key(req):
+    return req.get_header("Authorization") or ""
+
+
 class LoginView(JsonAPIView):
     @versioned
     @rate_limiter(
         limits=settings.FALCON_LIMITER_LOGIN_LIMITS,
-        key_gen=lambda req: req.get_media()["data"]["attributes"]["email"],
+        key_gen=_login_rate_limit_key,
     )
     def on_post(self, request, response, *args, **kwargs):
         self.handle_post(request, response, self.POST, *args, **kwargs)
@@ -110,60 +186,164 @@ class LoginView(JsonAPIView):
 
         def _get_data(self, cleaned, *args, **kwargs):
             cleaned = cleaned["data"]["attributes"]
-            cleaned["email"] = cleaned["email"].lower()
-            try:
-                user = User.objects.get(
-                    email=cleaned["email"],
-                    is_removed=False,
-                    is_permanently_removed=False,
-                )
-            except User.DoesNotExist:
-                raise falcon.HTTPUnauthorized(
-                    title="401 Unauthorized",
-                    description=_("Invalid email or password"),
-                    code="account_not_exist",
-                )
+            user = authenticate_with_password(self.request, cleaned["email"], cleaned["password"])
+            # drugi składnik po poprawnym haśle, przed utworzeniem sesji (mcod.users.mfa)
+            with mfa_api_errors():
+                mfa.check_login(user, cleaned.get("otp_code"))
+            return log_in_api_user(self.request, user)
 
-            if user.state != "active":
-                if user.state not in settings.USER_STATE_LIST or user.state == "deleted":
-                    raise falcon.HTTPUnauthorized(
-                        title="401 Unauthorized",
-                        description=_("Account is not available"),
-                        code="account_unavailable",
-                    )
 
-                if user.state in ("draft", "blocked"):
-                    raise falcon.HTTPUnauthorized(
-                        title="401 Unauthorized",
-                        description=_("Account is blocked"),
-                        code="account_unavailable",
-                    )
+class MfaLoginSetupView(JsonAPIView):
+    """Konfiguracja 2FA wymuszonego przez administratora, zanim konto dostanie sesję."""
 
-                if user.state == "pending":
-                    raise falcon.HTTPForbidden(
-                        title="403 Forbidden",
-                        description=get_user_pending_description(),
-                        code="account_inactive",
-                    )
+    @versioned
+    @rate_limiter(limits=settings.FALCON_LIMITER_LOGIN_LIMITS, key_gen=_login_rate_limit_key)
+    def on_post(self, request, response, *args, **kwargs):
+        self.handle_post(request, response, self.POST, *args, **kwargs)
 
-            user = authenticate(request=self.request, **cleaned)
+    class POST(CreateOneHdlr):
+        database_model = get_user_model()
+        deserializer_schema = MfaLoginSetupApiRequest
+        serializer_schema = partial(MfaStatusApiResponse, many=False)
 
-            if user is None:
-                raise falcon.HTTPUnauthorized(
-                    title="401 Unauthorized",
-                    description=_("Invalid email or password"),
-                    code="authorization_error",
-                )
+        def _get_data(self, cleaned, *args, **kwargs):
+            data = cleaned["data"]["attributes"]
+            user = authenticate_with_password(self.request, data["email"], data["password"])
+            with mfa_api_errors():
+                if mfa.is_enabled(user):
+                    raise mfa.MfaRequired()
+                if not mfa.is_required(user):
+                    raise mfa.MfaNotAllowed()
+                setup = mfa.start_enrollment(user)
+            return SimpleNamespace(id=user.id, enabled=False, required=True, **setup)
 
-            if not hasattr(self.request, "session"):
-                self.request.session = session_store()
 
-                self.request.META = {}
-            login(self.request, user)
-            self.request.session.save()
-            user.token = get_auth_token(user, self.request.session.session_key)
-            user.update_last_logging_method(LoggingMethod.FORM)
+class MfaLoginConfirmView(JsonAPIView):
+    """Potwierdzenie konfiguracji 2FA kodem z aplikacji – kończy logowanie i zwraca kody zapasowe."""
+
+    @versioned
+    @rate_limiter(limits=settings.FALCON_LIMITER_LOGIN_LIMITS, key_gen=_login_rate_limit_key)
+    def on_post(self, request, response, *args, **kwargs):
+        self.handle_post(request, response, self.POST, *args, **kwargs)
+
+    class POST(CreateOneHdlr):
+        database_model = get_user_model()
+        deserializer_schema = MfaLoginConfirmApiRequest
+        serializer_schema = partial(LoginApiResponse, many=False)
+
+        def _get_data(self, cleaned, *args, **kwargs):
+            data = cleaned["data"]["attributes"]
+            user = authenticate_with_password(self.request, data["email"], data["password"])
+            with mfa_api_errors():
+                if mfa.is_enabled(user):
+                    raise mfa.MfaRequired()
+                if not mfa.is_required(user):
+                    raise mfa.MfaNotAllowed()
+                codes = mfa.confirm_enrollment(user, data["otp_code"])
+            user = log_in_api_user(self.request, user)
+            user.recovery_codes = codes
             return user
+
+
+class UserMfaView(JsonAPIView):
+    """Stan 2FA zalogowanego użytkownika."""
+
+    @falcon.before(login_required)
+    @versioned
+    def on_get(self, request, response, *args, **kwargs):
+        self.handle(request, response, self.GET, *args, **kwargs)
+
+    class GET(BaseHdlr):
+        serializer_schema = partial(MfaStatusApiResponse, many=False)
+
+        def _get_data(self, cleaned, *args, **kwargs):
+            user = self.request.user
+            return SimpleNamespace(id=user.id, **mfa.status(user))
+
+
+class UserMfaSetupView(JsonAPIView):
+    """Rozpoczęcie konfiguracji 2FA z poziomu konta (dobrowolnie albo po resecie przez administratora)."""
+
+    @falcon.before(login_required)
+    @versioned
+    @rate_limiter(limits=settings.FALCON_LIMITER_LOGIN_LIMITS, key_gen=_authorization_rate_limit_key)
+    def on_post(self, request, response, *args, **kwargs):
+        self.handle_post(request, response, self.POST, *args, **kwargs)
+
+    class POST(BaseHdlr):
+        serializer_schema = partial(MfaStatusApiResponse, many=False)
+
+        def _get_data(self, cleaned, *args, **kwargs):
+            user = self.request.user
+            with mfa_api_errors():
+                setup = mfa.start_enrollment(user)
+            return SimpleNamespace(id=user.id, enabled=False, required=mfa.is_required(user), **setup)
+
+
+class UserMfaConfirmView(JsonAPIView):
+    @falcon.before(login_required)
+    @versioned
+    @rate_limiter(limits=settings.FALCON_LIMITER_LOGIN_LIMITS, key_gen=_authorization_rate_limit_key)
+    def on_post(self, request, response, *args, **kwargs):
+        self.handle_post(request, response, self.POST, *args, **kwargs)
+
+    class POST(CreateOneHdlr):
+        database_model = get_user_model()
+        deserializer_schema = MfaCodeApiRequest
+        serializer_schema = partial(MfaStatusApiResponse, many=False)
+
+        def _get_data(self, cleaned, *args, **kwargs):
+            user = self.request.user
+            with mfa_api_errors():
+                codes = mfa.confirm_enrollment(user, cleaned["data"]["attributes"]["otp_code"])
+            return SimpleNamespace(id=user.id, recovery_codes=codes, **mfa.status(user))
+
+
+class UserMfaDisableView(JsonAPIView):
+    @falcon.before(login_required)
+    @versioned
+    @rate_limiter(limits=settings.FALCON_LIMITER_LOGIN_LIMITS, key_gen=_authorization_rate_limit_key)
+    def on_post(self, request, response, *args, **kwargs):
+        self.handle_post(request, response, self.POST, *args, **kwargs)
+
+    class POST(CreateOneHdlr):
+        database_model = get_user_model()
+        deserializer_schema = MfaDisableApiRequest
+        serializer_schema = partial(MfaStatusApiResponse, many=False)
+
+        def _get_data(self, cleaned, *args, **kwargs):
+            user = self.request.user
+            data = cleaned["data"]["attributes"]
+            if not user.check_password(data["password"]):
+                raise falcon.HTTPUnprocessableEntity(description=_("Wrong password"))
+            with mfa_api_errors():
+                mfa.disable(user, data["otp_code"])
+            return SimpleNamespace(id=user.id, **mfa.status(user))
+
+
+class UserMfaRecoveryCodesView(JsonAPIView):
+    """Nowa paczka kodów zapasowych (unieważnia poprzednią). Wymaga ważnego drugiego składnika."""
+
+    @falcon.before(login_required)
+    @versioned
+    @rate_limiter(limits=settings.FALCON_LIMITER_LOGIN_LIMITS, key_gen=_authorization_rate_limit_key)
+    def on_post(self, request, response, *args, **kwargs):
+        self.handle_post(request, response, self.POST, *args, **kwargs)
+
+    class POST(CreateOneHdlr):
+        database_model = get_user_model()
+        deserializer_schema = MfaCodeApiRequest
+        serializer_schema = partial(MfaStatusApiResponse, many=False)
+
+        def _get_data(self, cleaned, *args, **kwargs):
+            user = self.request.user
+            with mfa_api_errors():
+                if not mfa.is_enabled(user):
+                    raise mfa.MfaSetupNotStarted()
+                if not mfa.verify_second_factor(user, cleaned["data"]["attributes"]["otp_code"]):
+                    raise mfa.MfaInvalidCode()
+                codes = mfa.replace_recovery_codes(user)
+            return SimpleNamespace(id=user.id, recovery_codes=codes, **mfa.status(user))
 
 
 class RegistrationView(JsonAPIView):

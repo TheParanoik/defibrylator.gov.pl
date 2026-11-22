@@ -1,4 +1,4 @@
-import { DOCUMENT, LowerCasePipe, NgClass, NgIf, UpperCasePipe } from '@angular/common';
+import { DOCUMENT, LowerCasePipe, NgClass, NgFor, NgIf, UpperCasePipe } from '@angular/common';
 import { Component, Inject, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule, NgForm } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -13,6 +13,7 @@ import { toggleVertically } from '@app/animations';
 import { FeatureFlagService } from '@app/services/feature-flag.service';
 import { HighContrastModeEnum, HighContrastService } from '@app/services/high-contrast.service';
 import { IErrorBackend } from '@app/services/models/error-backend';
+import { getMfaErrorCode, MfaErrorCode, MfaLoginResult, MfaSetup, mfaQrImageSrc } from '@app/services/models/mfa';
 import { NotificationsService } from '@app/services/notifications.service';
 import { SeoService } from '@app/services/seo.service';
 import { UserService } from '@app/services/user.service';
@@ -30,6 +31,7 @@ import { NotificationsServerComponent } from '@app/shared/notifications-server/n
   imports: [
     LogingovplNotificationComponent,
     NgIf,
+    NgFor,
     NgClass,
     RouterLink,
     FormsModule,
@@ -62,6 +64,19 @@ export class LoginComponent implements OnInit, OnDestroy {
    */
   isEmailLoginChoose = false;
   highContrastMode: HighContrastModeEnum;
+
+  /**
+   * Two-factor authentication step of the e-mail login:
+   * 'code' - account has 2FA, enter app code or recovery code;
+   * 'setup' - administrator requires 2FA, set up the authenticator app;
+   * 'recoveryCodes' - setup finished, show recovery codes once.
+   */
+  mfaStep: 'none' | 'code' | 'setup' | 'recoveryCodes' = 'none';
+  mfaSetup: MfaSetup | null = null;
+  mfaQrSrc: string | null = null;
+  mfaRecoveryCodes: string[] = [];
+  mfaInvalidCode = false;
+  private credentials: { email: string; password: string; remember: boolean } | null = null;
   destroy$: Subject<void> = new Subject<void>();
 
   /**
@@ -105,14 +120,86 @@ export class LoginComponent implements OnInit, OnDestroy {
 
     this.notificationsService.clearAlerts();
     this.redirectUrl = this.activeRoute.snapshot.queryParams.redirect;
-    this.userService.login(form.value.email, form.value.password, !!form.value.rememberCheck).subscribe(() => {
-      if (this.redirectUrl) {
-        this.notificationsService.clearAlerts();
-        this.router.navigateByUrl(this.redirectUrl);
-      } else {
-        this.router.navigate(this.localizeRouterService.translateRoute(['/!user', '!dashboard']) as []);
-      }
+    this.credentials = { email: form.value.email, password: form.value.password, remember: !!form.value.rememberCheck };
+    this.userService.login(this.credentials.email, this.credentials.password, this.credentials.remember).subscribe({
+      next: () => this.navigateAfterLogin(),
+      error: (error) => this.handleMfaError(error),
     });
+  }
+
+  /**
+   * Second step: code from the authenticator app or a recovery code
+   */
+  onMfaCodeSubmit(form: NgForm) {
+    if (form.invalid || !this.credentials) {
+      return;
+    }
+    this.notificationsService.clearAlerts();
+    this.mfaInvalidCode = false;
+    const { email, password, remember } = this.credentials;
+    this.userService.login(email, password, remember, String(form.value.otpCode).trim()).subscribe({
+      next: () => this.navigateAfterLogin(),
+      error: (error) => this.handleMfaError(error, form),
+    });
+  }
+
+  /**
+   * Setup required by the administrator: confirm the app with the first code
+   */
+  onMfaSetupSubmit(form: NgForm) {
+    if (form.invalid || !this.credentials) {
+      return;
+    }
+    this.notificationsService.clearAlerts();
+    this.mfaInvalidCode = false;
+    const { email, password, remember } = this.credentials;
+    this.userService.confirmMfaSetupOnLogin(email, password, String(form.value.otpCode).trim(), remember).subscribe({
+      next: (user) => {
+        this.mfaRecoveryCodes = (user as unknown as MfaLoginResult)?.attributes?.recovery_codes || [];
+        this.credentials = null;
+        this.mfaStep = 'recoveryCodes';
+      },
+      error: (error) => this.handleMfaError(error, form),
+    });
+  }
+
+  finishMfaSetup() {
+    this.mfaRecoveryCodes = [];
+    this.navigateAfterLogin();
+  }
+
+  cancelMfa() {
+    this.credentials = null;
+    this.mfaSetup = null;
+    this.mfaQrSrc = null;
+    this.mfaInvalidCode = false;
+    this.mfaStep = 'none';
+  }
+
+  private handleMfaError(error: unknown, form?: NgForm) {
+    const code = getMfaErrorCode(error);
+    if (code === MfaErrorCode.Required) {
+      this.mfaStep = 'code';
+    } else if (code === MfaErrorCode.SetupRequired && this.credentials) {
+      this.userService.startMfaSetupOnLogin(this.credentials.email, this.credentials.password).subscribe((setup) => {
+        this.mfaSetup = setup;
+        this.mfaQrSrc = mfaQrImageSrc(setup.qr_svg);
+        this.mfaStep = 'setup';
+      });
+    } else if (code === MfaErrorCode.InvalidCode) {
+      this.mfaInvalidCode = true;
+      form?.resetForm();
+    }
+  }
+
+  private navigateAfterLogin() {
+    this.credentials = null;
+    if (this.redirectUrl) {
+      this.notificationsService.clearAlerts();
+      this.router.navigateByUrl(this.redirectUrl);
+    } else {
+      this.router.navigate(this.localizeRouterService.translateRoute(['/!user', '!dashboard']) as []);
+    }
   }
 
   chooseEmailLogin() {
@@ -121,6 +208,7 @@ export class LoginComponent implements OnInit, OnDestroy {
 
   returnToLoginMethod() {
     this.isEmailLoginChoose = false;
+    this.cancelMfa();
   }
 
   loginViaWk() {

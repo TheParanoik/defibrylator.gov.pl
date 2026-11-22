@@ -302,6 +302,8 @@ class AgentApiResponse(TopLevel):
 
 class LoginApiAttrs(UserSchemaMixin, ObjectAttrs):
     token = fields.Str(required=True)
+    # tylko po potwierdzeniu konfiguracji 2FA przy logowaniu – pokazywane jeden raz
+    recovery_codes = fields.List(fields.Str())
 
     class Meta:
         relationships_schema = UserApiRelationships
@@ -313,6 +315,28 @@ class LoginApiAttrs(UserSchemaMixin, ObjectAttrs):
 class LoginApiResponse(TopLevel):
     class Meta:
         attrs_schema = LoginApiAttrs
+
+
+class MfaStatusApiAttrs(ObjectAttrs):
+    enabled = fields.Bool(required=True)
+    required = fields.Bool(required=True)
+    confirmed_at = fields.DateTime(allow_none=True)
+    recovery_codes_left = fields.Int()
+    # konfiguracja (POST .../setup): sekret do wpisania ręcznie, URI otpauth:// i kod QR (SVG)
+    secret = fields.Str()
+    otpauth_uri = fields.Str()
+    qr_svg = fields.Str(allow_none=True)
+    # po potwierdzeniu / wygenerowaniu nowych kodów – pokazywane jeden raz
+    recovery_codes = fields.List(fields.Str())
+
+    class Meta:
+        object_type = "mfa"
+        url_template = "{api_url}/auth/user/mfa"
+
+
+class MfaStatusApiResponse(TopLevel):
+    class Meta:
+        attrs_schema = MfaStatusApiAttrs
 
 
 class LogoutApiAttrs(ObjectAttrs):

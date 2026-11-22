@@ -37,6 +37,11 @@
           {{ 'User.ChangePassword' | translate }}
         </a>
 
+        <!-- two-factor authentication -->
+        <a [routerLink]="['/', '!user', '!dashboard', '!two-factor'] | localize" class="btn btn-outline-primary btn-sm">
+          {{ 'Mfa.Title' | translate }}
+        </a>
+
         <!-- my account info -->
         <div class="mt-4 mb-2">
           {{ 'MyDashboard.MyAccountId' | translate }}:

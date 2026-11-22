@@ -41,6 +41,11 @@ export abstract class RestService {
    */
   public jwtHelperService;
 
+  /**
+   * Error codes of the 2FA login flow handled by components instead of notifications
+   */
+  public static readonly MFA_FLOW_CODES: string[] = ['mfa_required', 'mfa_setup_required'];
+
   private readonly API = '/api';
   /**
    * Request errors without notifications
@@ -356,9 +361,12 @@ export abstract class RestService {
     if (isdBackendErrorVisible && navigator.onLine) {
       const errors: IErrorBackend[] = this.getBackendErrors({ ...err, error: error });
       if (errors) {
-        errors.forEach((e: IErrorBackend) => {
-          this.notificationService.addError(e.detail || e.title);
-        });
+        // 2FA: "podaj kod" i "skonfiguruj aplikację" to kroki logowania, nie błędy - obsługuje je LoginComponent
+        errors
+          .filter((e: IErrorBackend) => !RestService.MFA_FLOW_CODES.includes(e.code))
+          .forEach((e: IErrorBackend) => {
+            this.notificationService.addError(e.detail || e.title);
+          });
       } else {
         this.notificationService.addError('Unknown error');
       }

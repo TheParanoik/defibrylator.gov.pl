@@ -65,7 +65,7 @@
       </div>
       <div class="row">
         <div class="col-md-8 offset-md-2 col-lg-6 offset-lg-3">
-          <form class="auth-form" (ngSubmit)="onSubmit(f)" #f="ngForm">
+          <form class="auth-form" (ngSubmit)="onSubmit(f)" #f="ngForm" *ngIf="mfaStep === 'none'">
             <h1 class="heading heading--md heading--separator">
               {{ 'User.Login' | translate }}
             </h1>
@@ -183,6 +183,125 @@
               </a>
             </p>
           </form>
+
+          <!-- 2FA: CODE FROM AUTHENTICATOR APP -->
+          <form
+            class="auth-form"
+            (ngSubmit)="onMfaCodeSubmit(mfaCodeForm)"
+            #mfaCodeForm="ngForm"
+            *ngIf="mfaStep === 'code'">
+            <h1 class="heading heading--md heading--separator">
+              {{ 'Mfa.LoginTitle' | translate }}
+            </h1>
+            <app-notifications aria-live="assertive"></app-notifications>
+            <p>{{ 'Mfa.LoginDescription' | translate }}</p>
+
+            <div class="form-group" [ngClass]="{ 'form-group-invalid': mfaInvalidCode }">
+              <label for="otpCode">
+                {{ 'Mfa.Code' | translate }} <small>({{ 'Validation.RequiredField' | translate | lowercase }})</small>
+              </label>
+              <input
+                type="text"
+                class="form-control"
+                id="otpCode"
+                name="otpCode"
+                ngModel
+                required
+                maxlength="32"
+                autocomplete="one-time-code"
+                [attr.aria-invalid]="mfaInvalidCode"
+                [attr.aria-describedby]="mfaInvalidCode ? 'otpCode_error' : 'otpCode_hint'" />
+              <small class="form-text" id="otpCode_hint">{{ 'Mfa.CodeHint' | translate }}</small>
+              <small
+                class="form-text text-err"
+                role="alert"
+                id="otpCode_error"
+                aria-live="polite"
+                *ngIf="mfaInvalidCode">
+                {{ 'Mfa.InvalidCode' | translate }}
+              </small>
+            </div>
+
+            <div class="clearfix">
+              <button type="button" class="btn btn-outline-primary" (click)="cancelMfa()">
+                {{ 'Mfa.Cancel' | translate }}
+              </button>
+              <button type="submit" class="btn btn-primary float-right" [disabled]="mfaCodeForm.invalid">
+                {{ 'Action.Login' | translate | uppercase }}
+              </button>
+            </div>
+          </form>
+
+          <!-- 2FA: SETUP REQUIRED BY ADMINISTRATOR -->
+          <form
+            class="auth-form"
+            (ngSubmit)="onMfaSetupSubmit(mfaSetupForm)"
+            #mfaSetupForm="ngForm"
+            *ngIf="mfaStep === 'setup' && mfaSetup">
+            <h1 class="heading heading--md heading--separator">
+              {{ 'Mfa.SetupTitle' | translate }}
+            </h1>
+            <app-notifications aria-live="assertive"></app-notifications>
+            <p>{{ 'Mfa.SetupRequiredDescription' | translate }}</p>
+            <ol>
+              <li>{{ 'Mfa.SetupStep1' | translate }}</li>
+              <li>{{ 'Mfa.SetupStep2' | translate }}</li>
+              <li>{{ 'Mfa.SetupStep3' | translate }}</li>
+            </ol>
+            <p class="text-center" *ngIf="mfaQrSrc">
+              <img [src]="mfaQrSrc" [alt]="'Mfa.QrAlt' | translate" width="220" height="220" />
+            </p>
+            <p>
+              {{ 'Mfa.ManualKey' | translate }}
+              <code class="d-block font-weight-bold" style="word-break: break-all">{{ mfaSetup.secret }}</code>
+            </p>
+
+            <div class="form-group" [ngClass]="{ 'form-group-invalid': mfaInvalidCode }">
+              <label for="otpSetupCode">
+                {{ 'Mfa.Code' | translate }} <small>({{ 'Validation.RequiredField' | translate | lowercase }})</small>
+              </label>
+              <input
+                type="text"
+                class="form-control"
+                id="otpSetupCode"
+                name="otpCode"
+                ngModel
+                required
+                pattern="[0-9 ]{6,7}"
+                maxlength="7"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                [attr.aria-invalid]="mfaInvalidCode" />
+              <small class="form-text text-err" role="alert" aria-live="polite" *ngIf="mfaInvalidCode">
+                {{ 'Mfa.InvalidCode' | translate }}
+              </small>
+            </div>
+
+            <div class="clearfix">
+              <button type="button" class="btn btn-outline-primary" (click)="cancelMfa()">
+                {{ 'Mfa.Cancel' | translate }}
+              </button>
+              <button type="submit" class="btn btn-primary float-right" [disabled]="mfaSetupForm.invalid">
+                {{ 'Mfa.Activate' | translate }}
+              </button>
+            </div>
+          </form>
+
+          <!-- 2FA: RECOVERY CODES (shown once) -->
+          <div class="auth-form" *ngIf="mfaStep === 'recoveryCodes'">
+            <h1 class="heading heading--md heading--separator">
+              {{ 'Mfa.RecoveryCodesTitle' | translate }}
+            </h1>
+            <p>{{ 'Mfa.RecoveryCodesDescription' | translate }}</p>
+            <ul class="list-unstyled" aria-label="{{ 'Mfa.RecoveryCodesTitle' | translate }}">
+              <li *ngFor="let code of mfaRecoveryCodes">
+                <code>{{ code }}</code>
+              </li>
+            </ul>
+            <button type="button" class="btn btn-primary" (click)="finishMfaSetup()">
+              {{ 'Mfa.RecoveryCodesSaved' | translate }}
+            </button>
+          </div>
         </div>
       </div>
     </div>

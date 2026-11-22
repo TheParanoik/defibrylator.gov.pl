@@ -1,6 +1,13 @@
 export enum ApiConfig {
   apiVersion = '/1.4',
   userLogin = '/auth/login',
+  userLoginMfaSetup = '/auth/login/mfa/setup',
+  userLoginMfaConfirm = '/auth/login/mfa/confirm',
+  userMfa = '/auth/user/mfa',
+  userMfaSetup = '/auth/user/mfa/setup',
+  userMfaConfirm = '/auth/user/mfa/confirm',
+  userMfaDisable = '/auth/user/mfa/disable',
+  userMfaRecoveryCodes = '/auth/user/mfa/recovery-codes',
   userLogout = '/auth/logout',
   userRegistration = '/auth/registration',
   userResendEmail = '/auth/registration/resend-email',

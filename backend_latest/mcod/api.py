@@ -27,6 +27,7 @@ from mcod.lib.errors import (
     error_serializer,
     http_error_handler,
 )
+from mcod.users.mfa_api import MfaHTTPError, mfa_error_handler
 
 logging_config.dictConfig(settings.LOGGING)
 api_logger = logging.getLogger("mcod-api")
@@ -113,6 +114,8 @@ def get_api_app(middleware: Optional[list] = None):
     app.add_error_handler(falcon.HTTPNotFound, error_404_handler)
     app.add_error_handler(falconparser.HTTPError, error_422_handler)
     app.add_error_handler(falcon.HTTPUnprocessableEntity, error_422_handler)
+    # 2FA: zachowuje errors[].code (mfa_required, mfa_setup_required, ...) - mcod.users.mfa_api
+    app.add_error_handler(MfaHTTPError, mfa_error_handler)
 
     app.set_error_serializer(error_serializer)
     app.add_routes(routes)

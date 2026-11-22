@@ -2076,6 +2076,11 @@ FALCON_LIMITER_SPARQL_LIMITS = env("FALCON_LIMITER_SPARQL_LIMITS", default="20 p
 FALCON_LIMITER_PASSWORD_RESET_LIMITS = env("FALCON_LIMITER_PASSWORD_RESET_LIMITS", default="5 per hour")
 FALCON_LIMITER_LOGIN_LIMITS = env("FALCON_LIMITER_LOGIN_LIMITS", default="3 per minute,10 per hour")
 
+# Uwierzytelnianie dwuskładnikowe (TOTP) w logowaniu e-mail + hasło - mcod.users.mfa
+MFA_TOTP_ISSUER = env("MFA_TOTP_ISSUER", default="dane.gov.pl")
+# Wymóg 2FA dla wszystkich kont administratorów (is_superuser), niezależnie od flagi na koncie
+MFA_REQUIRED_FOR_SUPERUSERS = env.bool("MFA_REQUIRED_FOR_SUPERUSERS", default=False)
+
 FALCON_MIDDLEWARES = [
     "mcod.core.api.middlewares.ContentTypeMiddleware",
     "mcod.core.api.middlewares.DebugMiddleware",

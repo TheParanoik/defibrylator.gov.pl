@@ -6,6 +6,7 @@ import { catchError, finalize, map } from 'rxjs/operators';
 import { APP_CONFIG } from '@app/app.config';
 import { ApiConfig } from '@app/services/api';
 import { IRegistration, User } from '@app/services/models';
+import { MfaSetup, MfaStatus } from '@app/services/models/mfa';
 import { AuthRequestModel } from '@app/services/models/authRequestModel';
 import { BasicPageParams } from '@app/services/models/page-params';
 import { UserDashboardData } from '@app/services/models/user-dashboard-data';
@@ -110,12 +111,66 @@ export class UserService extends RestService {
    * @param {boolean} remember
    * @returns {Observable<User>}
    */
-  public login(email: string, password: string, remember = true): Observable<User> {
+  public login(email: string, password: string, remember = true, otpCode?: string): Observable<User> {
     this.headers = new HttpHeaders();
-    const requestData = this.prepareAuthParameters({ email, password });
+    const credentials: { email: string; password: string; otp_code?: string } = { email, password };
+    if (otpCode) {
+      credentials.otp_code = otpCode;
+    }
+    return this.completeLogin(ApiConfig.userLogin, this.prepareAuthParameters(credentials), remember);
+  }
 
+  /**
+   * 2FA required by the administrator: starts authenticator app setup before the account gets a session.
+   * Returns secret, otpauth URI and QR code (SVG).
+   */
+  public startMfaSetupOnLogin(email: string, password: string): Observable<MfaSetup> {
+    this.headers = new HttpHeaders();
+    return this.post(ApiConfig.userLoginMfaSetup, this.prepareAuthParameters({ email, password })).pipe(
+      map((response) => response.data.attributes as MfaSetup),
+    );
+  }
+
+  /**
+   * Confirms authenticator app setup with a code and logs the user in. Recovery codes are in attributes.
+   */
+  public confirmMfaSetupOnLogin(email: string, password: string, otpCode: string, remember = true): Observable<User> {
+    this.headers = new HttpHeaders();
+    const requestData = this.prepareAuthParameters({ email, password, otp_code: otpCode });
+    return this.completeLogin(ApiConfig.userLoginMfaConfirm, requestData, remember);
+  }
+
+  public getMfaStatus(): Observable<MfaStatus> {
+    return this.get(ApiConfig.userMfa).pipe(map((response) => response.data.attributes as MfaStatus));
+  }
+
+  public startMfaSetup(): Observable<MfaSetup> {
+    this.setupHeaders(this.token, true);
+    return this.post(ApiConfig.userMfaSetup).pipe(map((response) => response.data.attributes as MfaSetup));
+  }
+
+  public confirmMfaSetup(otpCode: string): Observable<MfaStatus> {
+    return this.postMfa(ApiConfig.userMfaConfirm, { otp_code: otpCode });
+  }
+
+  public disableMfa(password: string, otpCode: string): Observable<MfaStatus> {
+    return this.postMfa(ApiConfig.userMfaDisable, { password, otp_code: otpCode });
+  }
+
+  public regenerateMfaRecoveryCodes(otpCode: string): Observable<MfaStatus> {
+    return this.postMfa(ApiConfig.userMfaRecoveryCodes, { otp_code: otpCode });
+  }
+
+  private postMfa(url: string, attributes: { [key: string]: string }): Observable<MfaStatus> {
+    this.setupHeaders(this.token, true);
+    return this.post(url, { data: { type: 'mfa', attributes } }).pipe(
+      map((response) => response.data.attributes as MfaStatus),
+    );
+  }
+
+  private completeLogin(url: string, requestData: AuthRequestModel<unknown>, remember: boolean): Observable<User> {
     return new Observable((observer) => {
-      this.post(ApiConfig.userLogin, requestData)
+      this.post(url, requestData)
         .pipe(map((response) => response.data))
         .subscribe(
           (data) => {

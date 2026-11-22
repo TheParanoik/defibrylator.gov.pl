@@ -1,0 +1,138 @@
+<section class="container" *ngIf="status">
+  <h2 class="heading heading--sm">{{ 'Mfa.Title' | translate }}</h2>
+  <app-notifications aria-live="assertive"></app-notifications>
+
+  <p class="text-err" role="alert" *ngIf="invalidCode">{{ 'Mfa.InvalidCode' | translate }}</p>
+  <p class="text-err" role="alert" *ngIf="notAllowed">{{ 'Mfa.NotAllowed' | translate }}</p>
+
+  <!-- STATUS -->
+  <div *ngIf="mode === 'view'">
+    <p *ngIf="status.enabled">
+      <strong>{{ 'Mfa.StatusEnabled' | translate }}</strong>
+      <span *ngIf="status.confirmed_at"> ({{ status.confirmed_at | date: 'yyyy-MM-dd' }})</span>.
+      {{ 'Mfa.RecoveryCodesLeft' | translate: { count: status.recovery_codes_left } }}
+    </p>
+    <p *ngIf="!status.enabled">
+      <strong>{{ 'Mfa.StatusDisabled' | translate }}</strong>
+    </p>
+    <p *ngIf="status.required">{{ 'Mfa.RequiredByAdmin' | translate }}</p>
+    <p>{{ 'Mfa.Description' | translate }}</p>
+
+    <!-- recovery codes shown once after setup / regeneration -->
+    <div class="alert alert-warning" *ngIf="recoveryCodes.length">
+      <h3 class="heading heading--xs">{{ 'Mfa.RecoveryCodesTitle' | translate }}</h3>
+      <p>{{ 'Mfa.RecoveryCodesDescription' | translate }}</p>
+      <ul class="list-unstyled">
+        <li *ngFor="let code of recoveryCodes">
+          <code>{{ code }}</code>
+        </li>
+      </ul>
+    </div>
+
+    <button type="button" class="btn btn-primary btn-sm" *ngIf="!status.enabled" (click)="startSetup()">
+      {{ 'Mfa.Enable' | translate }}
+    </button>
+    <ng-container *ngIf="status.enabled">
+      <button type="button" class="btn btn-outline-primary btn-sm mr-2" (click)="setMode('regenerate')">
+        {{ 'Mfa.RegenerateCodes' | translate }}
+      </button>
+      <button
+        type="button"
+        class="btn btn-outline-primary btn-sm"
+        *ngIf="!status.required"
+        (click)="setMode('disable')">
+        {{ 'Mfa.Disable' | translate }}
+      </button>
+    </ng-container>
+  </div>
+
+  <!-- SETUP -->
+  <form *ngIf="mode === 'setup' && setup" (ngSubmit)="confirmSetup(setupForm)" #setupForm="ngForm">
+    <ol>
+      <li>{{ 'Mfa.SetupStep1' | translate }}</li>
+      <li>{{ 'Mfa.SetupStep2' | translate }}</li>
+      <li>{{ 'Mfa.SetupStep3' | translate }}</li>
+    </ol>
+    <p *ngIf="qrSrc"><img [src]="qrSrc" [alt]="'Mfa.QrAlt' | translate" width="220" height="220" /></p>
+    <p>
+      {{ 'Mfa.ManualKey' | translate }}
+      <code class="d-block font-weight-bold" style="word-break: break-all">{{ setup.secret }}</code>
+    </p>
+    <div class="form-group">
+      <label for="mfaSetupCode">{{ 'Mfa.Code' | translate }}</label>
+      <input
+        id="mfaSetupCode"
+        name="otpCode"
+        class="form-control"
+        ngModel
+        required
+        pattern="[0-9 ]{6,7}"
+        maxlength="7"
+        inputmode="numeric"
+        autocomplete="one-time-code" />
+    </div>
+    <button type="button" class="btn btn-outline-primary btn-sm mr-2" (click)="setMode('view')">
+      {{ 'Mfa.Cancel' | translate }}
+    </button>
+    <button type="submit" class="btn btn-primary btn-sm" [disabled]="setupForm.invalid">
+      {{ 'Mfa.Activate' | translate }}
+    </button>
+  </form>
+
+  <!-- NEW RECOVERY CODES -->
+  <form *ngIf="mode === 'regenerate'" (ngSubmit)="regenerateCodes(regenForm)" #regenForm="ngForm">
+    <p>{{ 'Mfa.RegenerateDescription' | translate }}</p>
+    <div class="form-group">
+      <label for="mfaRegenCode">{{ 'Mfa.Code' | translate }}</label>
+      <input
+        id="mfaRegenCode"
+        name="otpCode"
+        class="form-control"
+        ngModel
+        required
+        maxlength="32"
+        autocomplete="one-time-code" />
+      <small class="form-text">{{ 'Mfa.CodeHint' | translate }}</small>
+    </div>
+    <button type="button" class="btn btn-outline-primary btn-sm mr-2" (click)="setMode('view')">
+      {{ 'Mfa.Cancel' | translate }}
+    </button>
+    <button type="submit" class="btn btn-primary btn-sm" [disabled]="regenForm.invalid">
+      {{ 'Mfa.RegenerateCodes' | translate }}
+    </button>
+  </form>
+
+  <!-- DISABLE -->
+  <form *ngIf="mode === 'disable'" (ngSubmit)="disable(disableForm)" #disableForm="ngForm">
+    <p>{{ 'Mfa.DisableDescription' | translate }}</p>
+    <div class="form-group">
+      <label for="mfaDisablePassword">{{ 'User.CurrentPassword' | translate }}</label>
+      <input
+        id="mfaDisablePassword"
+        name="password"
+        type="password"
+        class="form-control"
+        ngModel
+        required
+        autocomplete="current-password" />
+    </div>
+    <div class="form-group">
+      <label for="mfaDisableCode">{{ 'Mfa.Code' | translate }}</label>
+      <input
+        id="mfaDisableCode"
+        name="otpCode"
+        class="form-control"
+        ngModel
+        required
+        maxlength="32"
+        autocomplete="one-time-code" />
+      <small class="form-text">{{ 'Mfa.CodeHint' | translate }}</small>
+    </div>
+    <button type="button" class="btn btn-outline-primary btn-sm mr-2" (click)="setMode('view')">
+      {{ 'Mfa.Cancel' | translate }}
+    </button>
+    <button type="submit" class="btn btn-danger btn-sm" [disabled]="disableForm.invalid">
+      {{ 'Mfa.Disable' | translate }}
+    </button>
+  </form>
+</section>

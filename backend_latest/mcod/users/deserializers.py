@@ -32,11 +32,71 @@ class ChangePasswordApiRequest(TopLevel):
 class LoginApiAttrs(ObjectAttrs):
     email = fields.Email(required=True, default=None)
     password = fields.Str(required=True, default=None)
+    # 2FA: kod z aplikacji uwierzytelniającej (6 cyfr) albo kod zapasowy (mcod.users.mfa)
+    otp_code = fields.Str(required=False, allow_none=True, validate=validate.Length(max=32))
 
     class Meta:
         strict = True
         ordered = True
         object_type = "user"
+
+
+class MfaLoginSetupApiAttrs(ObjectAttrs):
+    """Konfiguracja 2FA wymuszonego przez administratora – przed zalogowaniem (konto bez sesji)."""
+
+    email = fields.Email(required=True, default=None)
+    password = fields.Str(required=True, default=None)
+
+    class Meta:
+        strict = True
+        ordered = True
+        object_type = "user"
+
+
+class MfaLoginConfirmApiAttrs(MfaLoginSetupApiAttrs):
+    otp_code = fields.Str(required=True, validate=validate.Length(min=1, max=32))
+
+    class Meta(MfaLoginSetupApiAttrs.Meta):
+        pass
+
+
+class MfaCodeApiAttrs(ObjectAttrs):
+    otp_code = fields.Str(required=True, validate=validate.Length(min=1, max=32))
+
+    class Meta:
+        strict = True
+        object_type = "mfa"
+
+
+class MfaDisableApiAttrs(MfaCodeApiAttrs):
+    password = fields.Str(required=True)
+
+    class Meta(MfaCodeApiAttrs.Meta):
+        pass
+
+
+class MfaLoginSetupApiRequest(TopLevel):
+    class Meta:
+        attrs_schema = MfaLoginSetupApiAttrs
+        attrs_schema_required = True
+
+
+class MfaLoginConfirmApiRequest(TopLevel):
+    class Meta:
+        attrs_schema = MfaLoginConfirmApiAttrs
+        attrs_schema_required = True
+
+
+class MfaCodeApiRequest(TopLevel):
+    class Meta:
+        attrs_schema = MfaCodeApiAttrs
+        attrs_schema_required = True
+
+
+class MfaDisableApiRequest(TopLevel):
+    class Meta:
+        attrs_schema = MfaDisableApiAttrs
+        attrs_schema_required = True
 
 
 class MeetingStateField(search_fields.ListTermsField):
