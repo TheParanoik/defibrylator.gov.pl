@@ -1,4 +1,5 @@
 from mcod.academy import views as academy_views
+from mcod.aed.api import views as aed_views
 from mcod.core.api.utils import views as core_views
 from mcod.core.api.views import MetricsResource
 from mcod.datasets import views as dataset_views
@@ -36,6 +37,17 @@ routes = [
     ("/doc", core_views.SwaggerView()),
     ("/licenses/{name}", dataset_views.LicenseView()),
     # User
+    # moduł AED (API.md) – /auth/aed/… z kontekstem podmiotu, /aed – mapa publiczna
+    ("/auth/aed/me", aed_views.MeView()),
+    ("/auth/aed/context", aed_views.ContextView()),
+    ("/auth/aed/org", aed_views.OrganizationView()),
+    ("/auth/aed/org/devices", aed_views.DevicesView()),
+    ("/auth/aed/org/devices/{device_id}", aed_views.DeviceView()),
+    ("/auth/aed/org/devices/{device_id}/confirm", aed_views.DeviceConfirmView()),
+    ("/auth/aed/org/devices/{device_id}/versions", aed_views.DeviceVersionsView()),
+    ("/auth/aed/org/devices/{device_id}/versions/{version_no:int}", aed_views.DeviceVersionView()),
+    ("/aed", aed_views.PublicDevicesView()),
+    ("/aed/{device_id}", aed_views.PublicDeviceView()),
     ("/auth/login", user_views.LoginView()),
     ("/auth/login/mfa/setup", user_views.MfaLoginSetupView()),
     ("/auth/login/mfa/confirm", user_views.MfaLoginConfirmView()),

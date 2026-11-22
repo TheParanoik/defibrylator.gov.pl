@@ -9,11 +9,11 @@ import hashlib
 from datetime import timedelta
 
 import pytest
-from django.db import DatabaseError, connection, transaction
+from django.db import DatabaseError, transaction
 from django.utils import timezone
 
 from mcod.aed import services
-from mcod.aed.context import aed_context, aed_user_id
+from mcod.aed.context import aed_context
 from mcod.aed.models import (
     AedOrganization,
     AuditEvent,
@@ -25,11 +25,7 @@ from mcod.aed.models import (
     ReadOnlyModelError,
     UserLink,
 )
-from mcod.users.factories import UserFactory
-from mcod.users.models import UserTOTP
-
-ORG_A = "00000000-0000-0000-0000-00000000000a"
-ORG_B = "00000000-0000-0000-0000-00000000000b"
+from mcod.aed.tests.conftest import ORG_A, ORG_B
 
 
 def feature(**props):
@@ -43,44 +39,6 @@ def feature(**props):
 def sql_error(exc_info):
     cause = exc_info.value.__cause__
     return cause.pgcode, cause.diag.constraint_name, cause.diag.message_detail
-
-
-@pytest.fixture
-def aed(test_password):
-    """Dwa aktywne podmioty (A, B) z administratorami; dane startowe z wyłączonymi triggerami."""
-    mc = UserFactory.create(email="mc@aed.test", password=test_password, state="active")
-    admin_a = UserFactory.create(email="a@aed.test", password=test_password, state="active", is_gov_auth=True)
-    admin_b = UserFactory.create(email="b@aed.test", password=test_password, state="active", is_gov_auth=True)
-    for user in (admin_a, admin_b):  # org_admin wymaga 2FA (auth.has_mfa → mcod.users.mfa)
-        UserTOTP.objects.create(user=user, secret="JBSWY3DPEHPK3PXP", confirmed_at=timezone.now())
-    links = {key: aed_user_id(user) for key, user in (("mc", mc), ("a", admin_a), ("b", admin_b))}
-
-    with connection.cursor() as cursor:
-        cursor.execute("SET LOCAL session_replication_role = replica")
-        cursor.execute(
-            "INSERT INTO org.organization (id, name, type, nip, status, verified_by, approved_by, approved_at) VALUES "
-            "(%s, 'Podmiot A', 'public_unit', '1234563218', 'active', %s, %s, now()),"
-            "(%s, 'Podmiot B', 'public_unit', '5260250274', 'active', %s, %s, now())",
-            [ORG_A, links["a"], links["mc"], ORG_B, links["b"], links["mc"]],
-        )
-        cursor.execute(
-            "INSERT INTO org.responsibility_statement (kind, version, body, valid_from) VALUES "
-            "('registration', '1', 'reg', now() - interval '1 day'),"
-            "('change_confirmation', '1', 'conf', now() - interval '1 day')"
-        )
-        cursor.execute(
-            "INSERT INTO org.statement_acceptance (organization_id, statement_id, user_id) "
-            "SELECT v.o, s.id, v.u FROM org.responsibility_statement s, "
-            "(VALUES (%s::uuid, %s::uuid), (%s::uuid, %s::uuid)) v(o, u) WHERE s.kind = 'registration'",
-            [ORG_A, links["a"], ORG_B, links["b"]],
-        )
-        cursor.execute(
-            "INSERT INTO org.membership (user_id, organization_id, role, granted_by) VALUES "
-            "(%s, %s, 'org_admin', %s), (%s, %s, 'org_admin', %s)",
-            [links["a"], ORG_A, links["mc"], links["b"], ORG_B, links["mc"]],
-        )
-        cursor.execute("SET LOCAL session_replication_role = origin")
-    return {"users": {"a": admin_a, "b": admin_b, "mc": mc}, "links": links}
 
 
 def save(aed, who, org, props, device_id=None, batch=None):

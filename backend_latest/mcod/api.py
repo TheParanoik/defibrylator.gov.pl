@@ -15,6 +15,7 @@ from falcon.request import Request
 from falcon.response import Response
 from webargs import falconparser
 
+from mcod.aed.api.errors import AedError, aed_error_handler
 from mcod.core.api.converters import ExportFormatConverter, RDFFormatConverter
 from mcod.core.api.health_check import start_health_monitoring
 from mcod.core.api.media import ExportHandler, RDFHandler, SparqlHandler, XMLHandler, ZipHandler
@@ -116,6 +117,8 @@ def get_api_app(middleware: Optional[list] = None):
     app.add_error_handler(falcon.HTTPUnprocessableEntity, error_422_handler)
     # 2FA: zachowuje errors[].code (mfa_required, mfa_setup_required, ...) - mcod.users.mfa_api
     app.add_error_handler(MfaHTTPError, mfa_error_handler)
+    # moduł AED: kody błędów z API.md §2.3 (errors[].code, source.pointer, meta) - mcod.aed.api.errors
+    app.add_error_handler(AedError, aed_error_handler)
 
     app.set_error_serializer(error_serializer)
     app.add_routes(routes)
