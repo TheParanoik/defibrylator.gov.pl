@@ -138,6 +138,7 @@ INSTALLED_APPS = [
     "mcod.datasets",
     "mcod.resources",
     "mcod.users",
+    "mcod.aed",
     "mcod.licenses",
     "mcod.counters",
     "mcod.histories",
